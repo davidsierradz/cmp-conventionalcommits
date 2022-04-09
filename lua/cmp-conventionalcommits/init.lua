@@ -1,3 +1,6 @@
+local semver = require('semver')
+local cmp = require('cmp')
+
 local source = {}
 
 local typesDict = {}
@@ -17,8 +20,8 @@ typesDict['docs'] = {
   label = 'docs',
   documentation = 'Documentation only changes',
 }
-typesDict['feat'] = {label = 'feat', documentation = 'A new feature'}
-typesDict['fix'] = {label = 'fix', documentation = 'A bug fix'}
+typesDict['feat'] = { label = 'feat', documentation = 'A new feature' }
+typesDict['fix'] = { label = 'fix', documentation = 'A bug fix' }
 typesDict['perf'] = {
   label = 'perf',
   documentation = 'A code change that improves performance',
@@ -68,38 +71,70 @@ function source.new()
   -- end
 
   source.types = {
-    typesDict['build'], typesDict['chore'], typesDict['ci'], typesDict['docs'],
-    typesDict['feat'], typesDict['fix'], typesDict['perf'],
-    typesDict['refactor'], typesDict['revert'], typesDict['style'],
+    typesDict['build'],
+    typesDict['chore'],
+    typesDict['ci'],
+    typesDict['docs'],
+    typesDict['feat'],
+    typesDict['fix'],
+    typesDict['perf'],
+    typesDict['refactor'],
+    typesDict['revert'],
+    typesDict['style'],
     typesDict['test'],
   }
 
-  local lernaresult = io.popen(
-                          [[./node_modules/.bin/lerna --loglevel silent list --all --long --parseable 2>/dev/null | cut --delimiter=':' --fields=2 | cut --delimiter='/' --fields=2]]):read(
-                          "*a")
-  if lernaresult ~= "" then
-    -- Success handling.
+  local yarnVersion = io.popen([[yarn --version | tr -d '\n']]):read('*a')
+
+  -- I think `yarn workspaces list --json` is in yarn 2 from the start (?)
+  if semver(yarnVersion) >= semver('2.0.0') then
+    local yarnWorkspacesIterator = io.popen([[yarn workspaces list --json]]):lines()
     local lines = {}
-    for s in lernaresult:gmatch("[^\r\n]+") do table.insert(lines, s) end
+    for yarnWorkspace in yarnWorkspacesIterator do
+      local yarnWorkspaceName = vim.fn.json_decode(yarnWorkspace).name
+      if yarnWorkspaceName:find('@', 1, true) then
+        local yarnWorkspaceNameStartOfScope = yarnWorkspaceName:find('/', 1, true) + 1
+        local yarnWorkspaceNameScope = yarnWorkspaceName:sub(yarnWorkspaceNameStartOfScope)
+        table.insert(lines, yarnWorkspaceNameScope)
+      end
+    end
     source.scopes = lines
-  else
-    -- Error handling.
-    source.scopes = {}
+  elseif semver(yarnVersion) < semver('2.0.0') then
+    dump('YARN 1')
   end
 
-  return setmetatable({}, {__index = source})
+  -- local lernaresult = io.popen(
+  --   [[./node_modules/.bin/lerna --loglevel silent list --all --long --parseable 2>/dev/null | cut --delimiter=':' --fields=2 | cut --delimiter='/' --fields=2]]
+  -- ):read('*a')
+  -- if lernaresult ~= '' then
+  --   -- Success handling.
+  --   local lines = {}
+  --   for s in lernaresult:gmatch('[^\r\n]+') do
+  --     table.insert(lines, s)
+  --   end
+  --   source.scopes = lines
+  -- else
+  --   -- Error handling.
+  --   source.scopes = {}
+  -- end
+
+  return setmetatable({}, { __index = source })
 end
 
-function source:is_available() return vim.bo.filetype == "gitcommit" end
+function source:is_available()
+  return vim.bo.filetype == 'gitcommit'
+end
 
-function source:get_keyword_pattern() return [[\w\+]] end
+function source:get_keyword_pattern()
+  return [[\k\+]]
+end
 
 local function candidates(entries)
   local items = {}
   for k, v in ipairs(entries) do
     items[k] = {
       label = v.label,
-      kind = require('cmp').lsp.CompletionItemKind.Keyword,
+      kind = cmp.lsp.CompletionItemKind.Keyword,
       documentation = v.documentation,
     }
   end
@@ -109,21 +144,26 @@ end
 local function candidatesLernaScope(entries)
   local items = {}
   for k, v in ipairs(entries) do
-    items[k] = {label = v, kind = require('cmp').lsp.CompletionItemKind.Folder}
+    items[k] = { label = v, kind = cmp.lsp.CompletionItemKind.Folder }
   end
   return items
 end
 
 function source:complete(request, callback)
-  if request.context.option.reason == "manual" and request.context.cursor.row ==
-      1 and request.context.cursor.col == 1 then
-    callback({items = candidates(self.types), isIncomplete = true})
-  elseif request.context.option.reason == "auto" and request.context.cursor.row ==
-      1 and request.context.cursor.col == 2 then
-    callback({items = candidates(self.types), isIncomplete = true})
-  elseif request.context.cursor_after_line == ")" and request.context.cursor.row ==
-      1 then
-    callback({items = candidatesLernaScope(self.scopes), isIncomplete = true})
+  if
+    request.context.option.reason == 'manual'
+    and request.context.cursor.row == 1
+    and request.context.cursor.col == 1
+  then
+    callback({ items = candidates(self.types), isIncomplete = true })
+  elseif
+    request.context.option.reason == 'auto'
+    and request.context.cursor.row == 1
+    and request.context.cursor.col == 2
+  then
+    callback({ items = candidates(self.types), isIncomplete = true })
+  elseif request.context.cursor_after_line == ')' and request.context.cursor.row == 1 then
+    callback({ items = candidatesLernaScope(self.scopes), isIncomplete = true })
   else
     callback()
   end

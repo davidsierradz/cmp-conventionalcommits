@@ -12,6 +12,16 @@ If you have [Lerna](https://lerna.js.org/), completes your local packages in the
 
 ![example_2](https://user-images.githubusercontent.com/9190258/139169114-d6832cab-a123-4a96-a92f-6b84e11f028b.png)
 
+## Installation
+
+```lua
+use({
+  'davidsierradz/cmp-conventionalcommits',
+  branch = 'feature/addYarnWorkspacesToScopes',
+  rocks = { { 'semver' } },
+})
+```
+
 ## Setup
 
 Setup in `after/ftplugin/gitcommit.lua`
