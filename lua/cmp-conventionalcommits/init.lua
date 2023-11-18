@@ -1,70 +1,99 @@
-local source = {}
+---@class Plugin
+---@field default_config PluginOptions
+---@field types CmpEntry[]
+---@field scopes CmpEntry[]
+local M = {
+  default_config = {
+    types = {
+      feat = {
+        description = 'A new feature',
+        title = 'Features',
+      },
+      fix = {
+        description = 'A bug fix',
+        title = 'Bug Fixes',
+      },
+      docs = {
+        description = 'Documentation only changes',
+        title = 'Documentation',
+      },
+      style = {
+        description =
+        'Changes that do not affect the meaning of the code (white-space, formatting, missing semi-colons, etc)',
+        title = 'Styles',
+      },
+      refactor = {
+        description = 'A code change that neither fixes a bug nor adds a feature',
+        title = 'Code Refactoring',
+      },
+      perf = {
+        description = 'A code change that improves performance',
+        title = 'Performance Improvements',
+      },
+      test = {
+        description = 'Adding missing tests or correcting existing tests',
+        title = 'Tests',
+      },
+      build = {
+        description =
+        'Changes that affect the build system or external dependencies (example scopes: gulp, broccoli, npm)',
+        title = 'Builds',
+      },
+      ci = {
+        description =
+        'Changes to our CI configuration files and scripts (example scopes: Travis, Circle, BrowserStack, SauceLabs)',
+        title = 'Continuous Integrations',
+      },
+      chore = {
+        description = "Other changes that don't modify src or test files",
+        title = 'Chores',
+      },
+      revert = {
+        description = 'Reverts a previous commit',
+        title = 'Reverts',
+      },
+    },
+    scopes = {}
+  }
+}
 
-function source.new()
-  local commitlintConfigRaw = io.popen(
-        [[node --eval 'eval("var obj ="+process.argv[1]);console.log(JSON.stringify(obj));' "$(npx commitlint --print-config --no-color | tr '\n' ' ')" 2>/dev/null]])
-      :read(
-        "*a")
-
-  -- TODO: using commitling config file
-  local commitlintConfig = vim.fn.json_decode(commitlintConfigRaw)
-  local commitlintTypes = ((commitlintConfig or {})['rules'] or {})['type-enum']
-  source.types = {}
-  for _, type in ipairs(commitlintTypes[3]) do
-    source.types[type] = { label = type, kind = require('cmp').lsp.CompletionItemKind.Keyword }
+---@type fun(props: {title: string?, description: string?}): string
+function GetDocumentation(props)
+  local typeTitle = props.title or ''
+  local typeDesc = props.description or ''
+  local sep = ''
+  if typeTitle ~= '' and typeDesc ~= '' then
+    sep = ': '
   end
+  return typeTitle .. sep .. typeDesc
+end
 
-  source.scopes = {}
-  local commitlintScopes = ((commitlintConfig or {})['rules'] or {})['scope-enum']
-  for _, scope in ipairs(commitlintScopes[3]) do
-    source.scopes[scope] = { label = scope, kind = require('cmp').lsp.CompletionItemKind.Keyword }
-  end
+---Plugin setup
+---@param opts PluginOptions
+function M.setup(opts)
+  opts = opts or {}
+  M.options = {
+    types = opts.types or M.default_config.types,
+    scopes = opts.scopes or M.default_config.scopes
+  }
+  local function set_default_global_entry(global_table, configuration_table)
+    for key, value in pairs(configuration_table) do
+      local is_table = type(configuration_table[key]) == 'table'
 
-  local commitlintQuestionsEnum = ((((commitlintConfig or {})['prompt'] or {})['questions'] or {})['type'] or {})
-      ['enum'] or {}
-
-  for type, props in pairs(commitlintQuestionsEnum) do
-    local typeTitle = props.title or ''
-    local typeDesc = props.description or ''
-    local sep = ''
-    if typeTitle ~= '' and typeDesc ~= '' then
-      sep = ': '
+      ---@type CmpEntry
+      local entry = {
+        label = is_table and key or value,
+        kind = require('cmp').lsp.CompletionItemKind.Keyword,
+        documentation = is_table and GetDocumentation(value) or nil
+      }
+      table.insert(global_table, entry)
     end
-    if source.types[type] ~= nil then
-      source.types[type]['documentation'] = typeTitle .. sep .. typeDesc
-    end
   end
 
-
-  return setmetatable({}, { __index = source })
+  M.types = {}
+  set_default_global_entry(M.types, M.options.types)
+  M.scopes = {}
+  set_default_global_entry(M.scopes, M.options.scopes)
 end
 
-function source:is_available() return vim.bo.filetype == "gitcommit" end
-
-function source:get_keyword_pattern() return [[\w\+]] end
-
-local function candidates(entries)
-  local items = {}
-  for _, v in pairs(entries) do
-    table.insert(items, v)
-  end
-  return items
-end
-
-function source:complete(request, callback)
-  vim.print(request)
-  if request.context.option.reason == "manual" and request.context.cursor.row ==
-      1 and request.context.cursor.col == 1 then
-    callback({ items = candidates(self.types), isIncomplete = true })
-  elseif request.context.option.reason == "auto" and request.context.cursor.row ==
-      1 and request.context.cursor.col == 2 then
-    callback({ items = candidates(self.types), isIncomplete = true })
-  elseif string.match(request.context.cursor_before_line, '%a+%(') and request.context.cursor.row ==
-      1 then
-    callback({ items = candidates(self.scopes), isIncomplete = true })
-  else
-    callback()
-  end
-end
-
-return source
+return M
